@@ -872,6 +872,12 @@ void process_shaders() {
 
         string_to_spv("mul_mat_vec_tq4_1s_f32_f32_subgroup_no_shmem", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_base, {{"B_TYPE", "float"}, {"B_TYPEV2", "vec2"}, {"B_TYPEV4", "vec4"}, {"USE_SUBGROUP_ADD_NO_SHMEM", "1"}}));
         string_to_spv("mul_mat_vec_tq4_1s_f16_f32_subgroup_no_shmem", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_base, {{"B_TYPE", "float16_t"}, {"B_TYPEV2", "f16vec2"}, {"B_TYPEV4", "f16vec4"}, {"USE_SUBGROUP_ADD_NO_SHMEM", "1"}}));
+
+        // TQ4_1S mul_mat_id variants (for MoE)
+        auto tq_id_base = merge_maps(tq_base, {{"MUL_MAT_ID", "1"}});
+        string_to_spv("mul_mat_vec_id_tq4_1s_f32_f32", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_id_base, {{"B_TYPE", "float"}, {"B_TYPEV2", "vec2"}, {"B_TYPEV4", "vec4"}}));
+        string_to_spv("mul_mat_vec_id_tq4_1s_f32_f32_subgroup", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_id_base, {{"B_TYPE", "float"}, {"B_TYPEV2", "vec2"}, {"B_TYPEV4", "vec4"}, {"USE_SUBGROUP_ADD", "1"}}));
+        string_to_spv("mul_mat_vec_id_tq4_1s_f32_f32_subgroup_no_shmem", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_id_base, {{"B_TYPE", "float"}, {"B_TYPEV2", "vec2"}, {"B_TYPEV4", "vec4"}, {"USE_SUBGROUP_ADD_NO_SHMEM", "1"}}));
     }
 
     // TQ4_1S dequant (standalone shader, f16 output)
@@ -1345,6 +1351,13 @@ void write_output_files() {
             src << "const void * arr_dmmv_tq4_1s_" << btype << "_f32_data[3] = {mul_mat_vec_tq4_1s_" << btype << "_f32_data, mul_mat_vec_tq4_1s_" << btype << "_f32_subgroup_data, mul_mat_vec_tq4_1s_" << btype << "_f32_subgroup_no_shmem_data};\n";
             src << "const uint64_t arr_dmmv_tq4_1s_" << btype << "_f32_len[3] =  {mul_mat_vec_tq4_1s_" << btype << "_f32_len,  mul_mat_vec_tq4_1s_" << btype << "_f32_subgroup_len, mul_mat_vec_tq4_1s_" << btype << "_f32_subgroup_no_shmem_len};\n";
         }
+    }
+
+    hdr << "extern const void * arr_dmmv_id_tq4_1s_f32_f32_data[3];\n";
+    hdr << "extern const uint64_t arr_dmmv_id_tq4_1s_f32_f32_len[3];\n";
+    if (basename(input_filepath) == "mul_mat_vec_tq4_1s.comp") {
+        src << "const void * arr_dmmv_id_tq4_1s_f32_f32_data[3] = {mul_mat_vec_id_tq4_1s_f32_f32_data, mul_mat_vec_id_tq4_1s_f32_f32_subgroup_data, mul_mat_vec_id_tq4_1s_f32_f32_subgroup_no_shmem_data};\n";
+        src << "const uint64_t arr_dmmv_id_tq4_1s_f32_f32_len[3] =  {mul_mat_vec_id_tq4_1s_f32_f32_len,  mul_mat_vec_id_tq4_1s_f32_f32_subgroup_len, mul_mat_vec_id_tq4_1s_f32_f32_subgroup_no_shmem_len};\n";
     }
 
     if (input_filepath == "") {
