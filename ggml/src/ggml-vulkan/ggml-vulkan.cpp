@@ -7687,6 +7687,11 @@ static vk_pipeline ggml_vk_get_dequantize_mul_mat_vec(ggml_backend_vk_context * 
         }
     }
 
+    if (a_type == GGML_TYPE_TQ4_1S) {
+        fprintf(stderr, "[VK_TQ4_1S] get_dmmv: b_type=%d num_cols=%u m=%u k=%u dmmv_wg=%u vendor=%u\n",
+                (int)b_type, num_cols, m, k, dmmv_wg, ctx->device->vendor_id);
+    }
+
     if (b_type == GGML_TYPE_Q8_1) {
         if (ctx->device->vendor_id == VK_VENDOR_ID_INTEL) {
             dmmv_wg = DMMV_WG_SIZE_SUBGROUP;
@@ -8999,6 +9004,18 @@ static vk_pipeline ggml_vk_get_64b_indexing_pipeline(ggml_backend_vk_context * c
 }
 
 static void ggml_vk_mul_mat_q_f16(ggml_backend_vk_context * ctx, vk_context& subctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst, bool disable_split_k) {
+    if (src0->type == GGML_TYPE_TQ4_1S) {
+        fprintf(stderr, "[VK_TQ4_1S] ENTER mul_mat_q_f16: ne0=[%lld,%lld] ne1=[%lld,%lld] ne20=%lld ne21=%lld disable_split_k=%d transpose_src0=%d transpose_src1=%d\n",
+                (long long)src0->ne[0], (long long)src0->ne[1], (long long)src1->ne[0], (long long)src1->ne[1],
+                (long long)dst->ne[0], (long long)dst->ne[1], (int)disable_split_k,
+                ggml_is_transposed(src0), ggml_is_transposed(src1));
+        fprintf(stderr, "[VK_TQ4_1S] mul_mat_q_f16 detail: src0_contig=%d src1_contig=%d nb0=[%lu,%lu,%lu,%lu] nb1=[%lu,%lu,%lu,%lu]\n",
+                ggml_vk_dim01_contiguous(src0), ggml_vk_dim01_contiguous(src1),
+                (unsigned long)src0->nb[0], (unsigned long)src0->nb[1], (unsigned long)src0->nb[2], (unsigned long)src0->nb[3],
+                (unsigned long)src1->nb[0], (unsigned long)src1->nb[1], (unsigned long)src1->nb[2], (unsigned long)src1->nb[3]);
+        fprintf(stderr, "[VK_TQ4_1S] mul_mat_q_f16 device: fp16=%d coopmat_support=%d coopmat2_support=%d subgroups=%d\n",
+                ctx->device->fp16, ctx->device->coopmat_support, ctx->device->coopmat2_support, ctx->device->subgroup_arithmetic);
+    }
     VK_LOG_DEBUG("ggml_vk_mul_mat_q_f16((" << src0 << ", name=" << src0->name << ", type=" << ggml_type_name(src0->type) << ", ne0=" << src0->ne[0] << ", ne1=" << src0->ne[1] << ", ne2=" << src0->ne[2] << ", ne3=" << src0->ne[3] << ", nb0=" << src0->nb[0] << ", nb1=" << src0->nb[1] << ", nb2=" << src0->nb[2] << ", nb3=" << src0->nb[3];
     std::cerr << "), (" << src1 << ", name=" << src1->name << ", type=" << ggml_type_name(src1->type) << ", ne0=" << src1->ne[0] << ", ne1=" << src1->ne[1] << ", ne2=" << src1->ne[2] << ", ne3=" << src1->ne[3] << ", nb0=" << src1->nb[0] << ", nb1=" << src1->nb[1] << ", nb2=" << src1->nb[2] << ", nb3=" << src1->nb[3];
     std::cerr << "), (" << dst << ", name=" << dst->name << ", type=" << ggml_type_name(dst->type) << ", ne0=" << dst->ne[0] << ", ne1=" << dst->ne[1] << ", ne2=" << dst->ne[2] << ", ne3=" << dst->ne[3] << ", nb0=" << dst->nb[0] << ", nb1=" << dst->nb[1] << ", nb2=" << dst->nb[2] << ", nb3=" << dst->nb[3];
@@ -9389,6 +9406,14 @@ static void ggml_vk_mul_mat_vec_q_f16(ggml_backend_vk_context * ctx, vk_context&
     const bool f16_f32_kernel = src1->type == GGML_TYPE_F32;
     bool quantize_y = ctx->device->integer_dot_product && src1->type == GGML_TYPE_F32 && ggml_is_contiguous(src1) && !y_non_contig && (ne11 * ne10) % 4 == 0 && ggml_vk_should_use_mmvq(ctx->device, ne01, ne11, ne10, src0->type);
 
+    if (src0->type == GGML_TYPE_TQ4_1S) {
+        fprintf(stderr, "[VK_TQ4_1S] pipeline_sel: idot=%d src1_type=%d src1_contig=%d y_non_contig=%d ne11*ne10%%4=%d should_mmvq=%d -> quantize_y=%d\n",
+                ctx->device->integer_dot_product, (int)src1->type, ggml_is_contiguous(src1), y_non_contig,
+                (int)((ne11 * ne10) % 4), ggml_vk_should_use_mmvq(ctx->device, ne01, ne11, ne10, src0->type), quantize_y);
+        fprintf(stderr, "[VK_TQ4_1S] detail: ne01=%lld ne11=%lld ne10=%lld num_cols=%lld src1_cont=%d x_non_contig=%d\n",
+                (long long)ne01, (long long)ne11, (long long)ne10, (long long)ne11, ggml_is_contiguous(src1), x_non_contig);
+    }
+
     vk_pipeline to_fp16_vk_0 = nullptr;
     vk_pipeline to_fp16_vk_1 = nullptr;
     if (x_non_contig) {
@@ -9408,6 +9433,11 @@ static void ggml_vk_mul_mat_vec_q_f16(ggml_backend_vk_context * ctx, vk_context&
         // Fall back to f16 dequant mul mat
         dmmv = ggml_vk_get_dequantize_mul_mat_vec(ctx, src0->type, src1->type, ne11, ne20, ne00);
         quantize_y = false;
+    }
+
+    if (src0->type == GGML_TYPE_TQ4_1S) {
+        fprintf(stderr, "[VK_TQ4_1S] pipeline_result: quantize_y=%d dmmv=%p f16_f32_kernel=%d x_non_contig=%d\n",
+                quantize_y, (void*)dmmv.get(), f16_f32_kernel, x_non_contig);
     }
 
     if (quantize_y) {
@@ -9571,6 +9601,12 @@ static void ggml_vk_mul_mat_vec_q_f16(ggml_backend_vk_context * ctx, vk_context&
             fusion_flags, base_work_group_y,
             (uint32_t)ne02, (uint32_t)ne12, (uint32_t)r2, (uint32_t)r3,
         };
+        if (src0->type == GGML_TYPE_TQ4_1S) {
+            fprintf(stderr, "[VK_TQ4_1S] mul_mat_vec: ncols(ncols)=%u ncols(elts)=%u stride_a=%u stride_b=%u stride_d=%u batch_x=%u batch_y=%u batch_d=%u fusion=%u base_wg_y=%u ne02=%u ne12=%u r2=%u r3=%u GROUPS=[%u,%u,%u] batch_n=%d src1_type=%d x_non_contig=%d\n",
+                    (uint32_t)ne00, pc.ncols, pc.stride_a, pc.stride_b, pc.stride_d, pc.batch_stride_a, pc.batch_stride_b, pc.batch_stride_d,
+                    pc.fusion_flags, pc.base_work_group_y, pc.ne02, pc.ne12, pc.broadcast2, pc.broadcast3,
+                    (uint32_t)groups_x, (uint32_t)groups_y, (uint32_t)groups_z, (int)batch_n, (int)src1->type, (int)x_non_contig);
+        }
         ggml_vk_dispatch_pipeline(ctx, subctx, dmmv,
                                   {
                                     d_X,
@@ -9897,8 +9933,17 @@ static void ggml_vk_mul_mat(ggml_backend_vk_context * ctx, vk_context& subctx, c
     // when ne12 and ne13 are one.
     } else if ((dst->ne[1] == 1 || (dst->ne[1] <= mul_mat_vec_max_cols && src1->ne[2] * src1->ne[3] == 1)) &&
                (src0->type == GGML_TYPE_F32 || src0->type == GGML_TYPE_F16 || src0->type == GGML_TYPE_BF16 || ggml_is_quantized(src0->type))) {
+        if (src0->type == GGML_TYPE_TQ4_1S) {
+            fprintf(stderr, "[VK_TQ4_1S] mul_mat -> mul_mat_vec: dst_ne1=%lld src1_ne2=%lld src1_ne3=%lld src0_name=%s\n",
+                    (long long)dst->ne[1], (long long)src1->ne[2], (long long)src1->ne[3], src0->name);
+        }
         ggml_vk_mul_mat_vec_q_f16(ctx, subctx, cgraph, node_idx);
     } else {
+        if (src0->type == GGML_TYPE_TQ4_1S) {
+            fprintf(stderr, "[VK_TQ4_1S] mul_mat -> GENERAL MATMUL (fallback!): dst_ne0=%lld dst_ne1=%lld src1_ne2=%lld src1_ne3=%lld is_quantized=%d src1_type=%d name=%s\n",
+                    (long long)dst->ne[0], (long long)dst->ne[1], (long long)src1->ne[2], (long long)src1->ne[3],
+                    ggml_is_quantized(src0->type), (int)src1->type, src0->name);
+        }
         ggml_vk_mul_mat_q_f16(ctx, subctx, src0, src1, dst, false);
     }
 }
@@ -15523,6 +15568,12 @@ static bool ggml_vk_build_graph(ggml_backend_vk_context * ctx, ggml_cgraph * cgr
 
         break;
     case GGML_OP_MUL_MAT:
+        if (src0->type == GGML_TYPE_TQ4_1S) {
+            fprintf(stderr, "[VK_TQ4_1S] MUL_MAT graph: src0_type=TQ4_1S dst_ne=[%lld,%lld,%lld,%lld] src1_ne=[%lld,%lld,%lld,%lld] dst_name=%s src0_name=%s\n",
+                    (long long)dst->ne[0], (long long)dst->ne[1], (long long)dst->ne[2], (long long)dst->ne[3],
+                    (long long)src1->ne[0], (long long)src1->ne[1], (long long)src1->ne[2], (long long)src1->ne[3],
+                    dst->name, src0->name);
+        }
         ggml_vk_mul_mat(ctx, compute_ctx, cgraph, node_idx);
 
         break;
