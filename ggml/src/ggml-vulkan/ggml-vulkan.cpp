@@ -9013,8 +9013,8 @@ static void ggml_vk_mul_mat_q_f16(ggml_backend_vk_context * ctx, vk_context& sub
                 ggml_vk_dim01_contiguous(src0), ggml_vk_dim01_contiguous(src1),
                 (unsigned long)src0->nb[0], (unsigned long)src0->nb[1], (unsigned long)src0->nb[2], (unsigned long)src0->nb[3],
                 (unsigned long)src1->nb[0], (unsigned long)src1->nb[1], (unsigned long)src1->nb[2], (unsigned long)src1->nb[3]);
-        fprintf(stderr, "[VK_TQ4_1S] mul_mat_q_f16 device: fp16=%d coopmat_support=%d coopmat2_support=%d subgroups=%d\n",
-                ctx->device->fp16, ctx->device->coopmat_support, ctx->device->coopmat2_support, ctx->device->subgroup_arithmetic);
+        fprintf(stderr, "[VK_TQ4_1S] mul_mat_q_f16 device: fp16=%d coopmat_support=%d subgroups=%d\n",
+                ctx->device->fp16, ctx->device->coopmat_support, ctx->device->subgroup_arithmetic);
     }
     VK_LOG_DEBUG("ggml_vk_mul_mat_q_f16((" << src0 << ", name=" << src0->name << ", type=" << ggml_type_name(src0->type) << ", ne0=" << src0->ne[0] << ", ne1=" << src0->ne[1] << ", ne2=" << src0->ne[2] << ", ne3=" << src0->ne[3] << ", nb0=" << src0->nb[0] << ", nb1=" << src0->nb[1] << ", nb2=" << src0->nb[2] << ", nb3=" << src0->nb[3];
     std::cerr << "), (" << src1 << ", name=" << src1->name << ", type=" << ggml_type_name(src1->type) << ", ne0=" << src1->ne[0] << ", ne1=" << src1->ne[1] << ", ne2=" << src1->ne[2] << ", ne3=" << src1->ne[3] << ", nb0=" << src1->nb[0] << ", nb1=" << src1->nb[1] << ", nb2=" << src1->nb[2] << ", nb3=" << src1->nb[3];
@@ -15569,10 +15569,10 @@ static bool ggml_vk_build_graph(ggml_backend_vk_context * ctx, ggml_cgraph * cgr
         break;
     case GGML_OP_MUL_MAT:
         if (src0->type == GGML_TYPE_TQ4_1S) {
-            fprintf(stderr, "[VK_TQ4_1S] MUL_MAT graph: src0_type=TQ4_1S dst_ne=[%lld,%lld,%lld,%lld] src1_ne=[%lld,%lld,%lld,%lld] dst_name=%s src0_name=%s\n",
-                    (long long)dst->ne[0], (long long)dst->ne[1], (long long)dst->ne[2], (long long)dst->ne[3],
+            fprintf(stderr, "[VK_TQ4_1S] MUL_MAT graph: src0_type=TQ4_1S node_ne=[%lld,%lld,%lld,%lld] src1_ne=[%lld,%lld,%lld,%lld] node_name=%s src0_name=%s\n",
+                    (long long)node->ne[0], (long long)node->ne[1], (long long)node->ne[2], (long long)node->ne[3],
                     (long long)src1->ne[0], (long long)src1->ne[1], (long long)src1->ne[2], (long long)src1->ne[3],
-                    dst->name, src0->name);
+                    node->name, src0->name);
         }
         ggml_vk_mul_mat(ctx, compute_ctx, cgraph, node_idx);
 
