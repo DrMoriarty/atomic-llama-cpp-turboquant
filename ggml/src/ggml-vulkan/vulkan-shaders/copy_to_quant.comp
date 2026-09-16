@@ -315,6 +315,78 @@ uint tq4_choose_index(float val) {
     return 15u;
 }
 
+void quantize(uint dst_idx, uint src_idx) {
+    // Read 32 elements, forward WHT, quantize
+    float buf[32];
+    for (int j = 0; j < 32; j++) {
+        buf[j] = float(data_s[src_idx + j]) * TQ4_SIGNS[j];
+    }
+
+    // Forward WHT butterfly (5 stages)
+    for (uint step = 1u; step < 32u; step <<= 1u) {
+        for (uint i = 0u; i < 32u; i += step * 2u) {
+            for (uint k = i; k < i + step; k++) {
+                float a = buf[k], b = buf[k + step];
+                buf[k]        = a + b;
+                buf[k + step] = a - b;
+            }
+        }
+    }
+
+    // Normalize
+    for (int j = 0; j < 32; j++) {
+        buf[j] *= TQ4_INV_SQRT32;
+    }
+
+    // Dual half-block RMS scale
+    float sq_lo = 0.0, sq_hi = 0.0;
+    for (int j = 0; j < 32; j++) {
+        float sq = buf[j] * buf[j];
+        if (j < 16) sq_lo += sq; else sq_hi += sq;
+    }
+    float rms_lo = sqrt(sq_lo / 16.0);
+    float rms_hi = sqrt(sq_hi / 16.0);
+
+    // Scale search
+    const float SCALES[9] = float[9](0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.35, 1.5);
+    float best_d0 = rms_lo, best_d1 = rms_hi;
+    float best_err = 1e30;
+    for (int s0 = 0; s0 < 9; s0++) {
+        for (int s1 = 0; s1 < 9; s1++) {
+            float d0 = rms_lo * SCALES[s0];
+            float d1 = rms_hi * SCALES[s1];
+            if (d0 < 1e-10) d0 = 1e-10;
+            if (d1 < 1e-10) d1 = 1e-10;
+            float err = 0.0;
+            for (int j = 0; j < 32; j++) {
+                float inv_d = (j < 16) ? 1.0/d0 : 1.0/d1;
+                float v = buf[j] * inv_d;
+                uint idx = tq4_choose_index(v);
+                float diff = v - TQ4_CENTROIDS[idx];
+                err += diff * diff;
+            }
+            if (err < best_err) {
+                best_err = err;
+                best_d0 = d0;
+                best_d1 = d1;
+            }
+        }
+    }
+
+    data_q[dst_idx].d0 = float16_t(best_d0);
+    data_q[dst_idx].d1 = float16_t(best_d1);
+
+    float inv_d0 = 1.0 / best_d0;
+    float inv_d1 = 1.0 / best_d1;
+    for (int j = 0; j < 32; j += 2) {
+        float v0 = buf[j] * (j < 16 ? inv_d0 : inv_d1);
+        float v1 = buf[j+1] * (j+1 < 16 ? inv_d0 : inv_d1);
+        uint idx0 = tq4_choose_index(v0);
+        uint idx1 = tq4_choose_index(v1);
+        data_q[dst_idx].qs[j / 2] = uint8_t(idx0 | (idx1 << 4));
+    }
+}
+
 #endif // defined(DATA_A_TQ4_1S)
 
 #if defined(DATA_A_Q2_0)

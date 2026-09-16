@@ -861,6 +861,34 @@ void process_shaders() {
     // TurboQuant Walsh-Hadamard Transform op (Q forward + kqv inverse rotation)
     string_to_spv("turbo_wht", "turbo_wht.comp", {});
 
+    // TQ4_1S: fused mul_mat_vec with forward WHT (dedicated shader, not via type_names loop)
+    {
+        auto tq_base = merge_maps(base_dict, {{"DATA_A_TQ4_1S", "1"}, {"D_TYPE", "float"}});
+        string_to_spv("mul_mat_vec_tq4_1s_f32_f32", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_base, {{"B_TYPE", "float"}, {"B_TYPEV2", "vec2"}, {"B_TYPEV4", "vec4"}}));
+        string_to_spv("mul_mat_vec_tq4_1s_f16_f32", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_base, {{"B_TYPE", "float16_t"}, {"B_TYPEV2", "f16vec2"}, {"B_TYPEV4", "f16vec4"}}));
+
+        string_to_spv("mul_mat_vec_tq4_1s_f32_f32_subgroup", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_base, {{"B_TYPE", "float"}, {"B_TYPEV2", "vec2"}, {"B_TYPEV4", "vec4"}, {"USE_SUBGROUP_ADD", "1"}}));
+        string_to_spv("mul_mat_vec_tq4_1s_f16_f32_subgroup", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_base, {{"B_TYPE", "float16_t"}, {"B_TYPEV2", "f16vec2"}, {"B_TYPEV4", "f16vec4"}, {"USE_SUBGROUP_ADD", "1"}}));
+
+        string_to_spv("mul_mat_vec_tq4_1s_f32_f32_subgroup_no_shmem", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_base, {{"B_TYPE", "float"}, {"B_TYPEV2", "vec2"}, {"B_TYPEV4", "vec4"}, {"USE_SUBGROUP_ADD_NO_SHMEM", "1"}}));
+        string_to_spv("mul_mat_vec_tq4_1s_f16_f32_subgroup_no_shmem", "mul_mat_vec_tq4_1s.comp", merge_maps(tq_base, {{"B_TYPE", "float16_t"}, {"B_TYPEV2", "f16vec2"}, {"B_TYPEV4", "f16vec4"}, {"USE_SUBGROUP_ADD_NO_SHMEM", "1"}}));
+    }
+
+    // TQ4_1S dequant (standalone shader, f16 output)
+    string_to_spv("dequant_tq4_1s", "dequant_tq4_1s.comp", {{"D_TYPE", "float16_t"}});
+
+    // TQ4_1S set_rows (f32 source only, like turbo)
+    string_to_spv("set_rows_f32_tq4_1s_i32", "copy_to_quant.comp", {{"SET_ROWS", "1"}, {"DATA_A_TQ4_1S", "1"}, {"B_TYPE", "uint"}, {"B_SIZE", "32"}, {"S_TYPE", "float"}, {"D_TYPE", "float"}, {"FLOAT_TYPE", "float"}});
+    string_to_spv("set_rows_f32_tq4_1s_i64", "copy_to_quant.comp", {{"SET_ROWS", "1"}, {"DATA_A_TQ4_1S", "1"}, {"B_TYPE", "uvec2"}, {"B_SIZE", "64"}, {"S_TYPE", "float"}, {"D_TYPE", "float"}, {"FLOAT_TYPE", "float"}});
+
+    // TQ4_1S get_rows
+    string_to_spv("get_rows_tq4_1s", "get_rows_quant.comp", {{"DATA_A_TQ4_1S", "1"}, {"B_TYPE", "int"}, {"D_TYPE", "float16_t"}, {"TEMP_TYPE", "FLOAT_TYPE"}});
+    string_to_spv("get_rows_tq4_1s_f32", "get_rows_quant.comp", {{"DATA_A_TQ4_1S", "1"}, {"B_TYPE", "int"}, {"D_TYPE", "float"}, {"TEMP_TYPE", "FLOAT_TYPE"}});
+
+    // TQ4_1S copy: f32 -> TQ4_1S and TQ4_1S -> f32
+    string_to_spv("cpy_f32_tq4_1s", "copy_to_quant.comp", {{"DATA_A_TQ4_1S", "1"}, {"S_TYPE", "float"}, {"D_TYPE", "float"}, {"FLOAT_TYPE", "float"}});
+    string_to_spv("cpy_tq4_1s_f32", "copy_from_quant.comp", {{"DATA_A_TQ4_1S", "1"}, {"D_TYPE", "float"}, {"FLOAT_TYPE", "float"}});
+
     auto get_type_str = [](bool f16) {
         return f16 ? "float16_t" : "float";
     };
@@ -1309,6 +1337,15 @@ void write_output_files() {
         }
     }
 #endif
+
+    for (const std::string& btype : {"f16", "f32"}) {
+        hdr << "extern const void * arr_dmmv_tq4_1s_" << btype << "_f32_data[3];\n";
+        hdr << "extern const uint64_t arr_dmmv_tq4_1s_" << btype << "_f32_len[3];\n";
+        if (basename(input_filepath) == "mul_mat_vec_tq4_1s.comp") {
+            src << "const void * arr_dmmv_tq4_1s_" << btype << "_f32_data[3] = {mul_mat_vec_tq4_1s_" << btype << "_f32_data, mul_mat_vec_tq4_1s_" << btype << "_f32_subgroup_data, mul_mat_vec_tq4_1s_" << btype << "_f32_subgroup_no_shmem_data};\n";
+            src << "const uint64_t arr_dmmv_tq4_1s_" << btype << "_f32_len[3] =  {mul_mat_vec_tq4_1s_" << btype << "_f32_len,  mul_mat_vec_tq4_1s_" << btype << "_f32_subgroup_len, mul_mat_vec_tq4_1s_" << btype << "_f32_subgroup_no_shmem_len};\n";
+        }
+    }
 
     if (input_filepath == "") {
         write_file_if_changed(target_hpp, hdr.str());
